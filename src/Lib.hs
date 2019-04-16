@@ -4,24 +4,20 @@ module Lib
     ( play
     ) where
 
-import           Control.Concurrent     (forkIO, threadDelay)
-import           Control.Monad          (forever, replicateM)
-import           Control.Monad.IO.Class (liftIO)
-import           Data.Bool              (bool)
+import           Brick              ((<+>), (<=>))
+import           Control.Concurrent (forkIO, threadDelay)
+import           Control.Monad      (forever, replicateM, void)
+import           Data.Bool          (bool)
 import           Data.Char
-import           Data.List              (dropWhileEnd, elemIndex, elemIndices,
-                                         intercalate, intersperse)
-import           Data.Maybe             (fromJust, fromMaybe)
-import           Debug.Trace
-import           Prelude                hiding (Word)
-import           System.IO
-import           System.Process         (system)
-import           System.Random          (randomRIO)
+import           Data.List          (dropWhileEnd, elemIndex, elemIndices,
+                                     intersperse)
+import           Data.Maybe         (fromJust, fromMaybe)
+import           Prelude            hiding (Word)
+import           System.Random      (randomRIO)
 
-import qualified Brick                  as B
-import qualified Brick.BChan            as B
-import qualified Brick.Types            as B
-import qualified Graphics.Vty           as V
+import qualified Brick              as B
+import qualified Brick.BChan        as B
+import qualified Graphics.Vty       as V
 
 
 type Word = String
@@ -49,9 +45,12 @@ data GameStatus = Playing | Win | GameOver
 data Guess = Correct Char | Incorrect
   deriving (Show, Eq)
 
+totalChances :: Int
+totalChances = 6
+
 parseDictionary :: String -> Dictionary
 parseDictionary txt =
-  map (map toUpper . trim) $ filter (\w -> length w > 3) $ lines txt
+  map (map toUpper . trim) $ filter (\w -> length w > 4) $ lines txt
   where
     trim = dropWhileEnd isSpace . dropWhile isSpace
 
@@ -61,25 +60,29 @@ getRandomWord dict = do
   return $ dict !! randomIdx
 
 obsfucateWord :: Word -> IO ObsfucatedWord
-obsfucateWord w = do
+obsfucateWord word = do
   -- TODO: better way of doing this?
-  rIdxs <- replicateM halfLen (randomRIO (0, length w))
-  let ob = map (\c -> bool (Just c) Nothing $ shouldHide rIdxs c) w
+  rIdxs <- getRandomIdxs
+  let ob = map (\c -> bool (Just c) Nothing $ shouldHide rIdxs c) word
   return $ ObsfucatedWord ob
   where
-    shouldHide rIdxs c = fromJust (elemIndex c w) `elem` rIdxs
-    halfLen = length w `div` 2
+    getRandomIdxs = do
+      let halfLen = length word `div` 2
+      rIdxs <- replicateM halfLen (randomRIO (0, length word))
+      if length rIdxs < 1
+        then getRandomIdxs
+        else return rIdxs
 
-chances :: Int
-chances = 6
+    shouldHide rIdxs c = fromJust (elemIndex c word) `elem` rIdxs
 
 incorrectGuess :: Char -> GameState -> GameState
-incorrectGuess guess gs = gs { gsCurrentChance = gsCurrentChance gs + 1
-                             , gsStatus = status
-                             , gsGuessedLetters = guess:(gsGuessedLetters gs)
-                             }
+incorrectGuess guess gs =
+  gs { gsCurrentChance = gsCurrentChance gs + 1
+     , gsStatus = status
+     , gsGuessedLetters = guess:(gsGuessedLetters gs)
+     }
   where status
-          | gsCurrentChance gs == chances - 1 = GameOver
+          | gsCurrentChance gs == totalChances - 1 = GameOver
           | otherwise = Playing
 
 checkGuess :: GameState -> Char -> Guess
@@ -111,17 +114,19 @@ type Name = ()
 data Tick = Tick
 
 draw :: GameState -> [B.Widget Name]
-draw gs@GameState {..} =
-  [ drawMain B.<=> drawStats]
+draw GameState {..} =
+  [ drawMain <=> drawStats]
   where
     drawMain = B.padAll 5 $ B.str (show gsObedWord)
     drawStats =
-      B.hBox [ B.str $ "REMAINING CHANCES: " ++
-               show (chances - gsCurrentChance) ++ "  "
-            , B.str $ "GUESSED LETTERS: " ++ intersperse ',' gsGuessedLetters
-            ]
+      B.hBox [ B.str $ "REMAINING CHANCES: " <> show remChances ++ "  "
+             , B.str $ "GUESSED LETTERS: " ++ intersperse ',' gsGuessedLetters
+             ]
+    remChances = bool 0 (totalChances - gsCurrentChance) $
+                 totalChances >= gsCurrentChance
 
-handleEvent :: GameState -> B.BrickEvent Name Tick -> B.EventM Name (B.Next GameState)
+handleEvent :: GameState -> B.BrickEvent Name Tick
+            -> B.EventM Name (B.Next GameState)
 handleEvent s ev =
   case gsStatus s of
     Win      -> B.halt s
@@ -155,7 +160,7 @@ theMap = B.attrMap mempty []
 play :: IO ()
 play = do
   chan <- B.newBChan 10
-  sendTicks chan
+  void $ sendTicks chan
   initialState <- mkInitialState
   initVty <- buildVty
   finalState <- B.customMain initVty buildVty (Just chan) app initialState
