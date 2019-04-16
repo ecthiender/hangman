@@ -1,0 +1,52 @@
+name:                hangman
+version:             0.1.0.0
+github:              "ecthiender/hangman"
+license:             BSD3
+author:              "Anon Ray"
+maintainer:          "rayanon004@gmail.com"
+copyright:           "2019 Anon Ray"
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/ecthiender/hangman#readme>
+
+dependencies:
+- base >= 4.7 && < 5
+- random
+- process
+- brick
+- vty
+
+library:
+  source-dirs: src
+
+executables:
+  hangman:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - hangman
+
+tests:
+  hangman-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - hangman
